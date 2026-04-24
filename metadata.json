@@ -1,0 +1,6 @@
+{
+  "name": "SevaAI",
+  "description": "AI-powered community support system designed to bridge the gap between people in need and available resources.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}

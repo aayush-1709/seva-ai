@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.routes.report import router as report_router
+from app.routes.reports import router as reports_router
 from app.routes.help import router as help_router
 from app.routes.volunteer import router as volunteer_router
 from app.routes.ngo import router as ngo_router
@@ -62,6 +63,7 @@ def services_health() -> JSONResponse:
 
 
 app.include_router(report_router)
+app.include_router(reports_router)
 app.include_router(help_router)
 app.include_router(volunteer_router)
 app.include_router(ngo_router)

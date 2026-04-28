@@ -1,6 +1,5 @@
 import { 
   Heart, 
-  ChevronLeft, 
   Users, 
   MapPin, 
   Clock, 

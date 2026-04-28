@@ -16,6 +16,7 @@ class Settings(BaseModel):
     google_maps_api_key: str = Field(default="", alias="GOOGLE_MAPS_API_KEY")
     firestore_issues_collection: str = "issues"
     firestore_volunteers_collection: str = "volunteers"
+    firestore_reports_collection: str = "reports"
     firestore_radius_km: float = 10.0
 
     @classmethod

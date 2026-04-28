@@ -28,6 +28,18 @@ class GeminiService:
         )
         return self._ask_gemini(prompt)
 
+    def refine_report_description(self, description: str) -> Dict[str, str]:
+        """SevaAI report form: classification, urgency, summary (strict JSON)."""
+        prompt = (
+            "Classify this issue, assign urgency (low/medium/high), and summarize it.\n\n"
+            f"Issue description:\n{description}\n\n"
+            "Return only valid JSON with keys: category, urgency, summary. "
+            "category must be one of: infrastructure, lighting, water, safety, environment, other. "
+            "urgency must be exactly one of: low, medium, high. "
+            "summary must be a clear, concise paragraph suitable as the public report text."
+        )
+        return self._ask_gemini(prompt)
+
     def analyze_help_request(self, request_text: str) -> Dict[str, str]:
         prompt = (
             "Analyze this help request and return strict JSON with keys "
@@ -100,6 +112,12 @@ class GeminiService:
     @staticmethod
     def _mock_response(prompt: str) -> Dict[str, str]:
         normalized = prompt.lower()
+        if "classify this issue" in normalized and "summarize it" in normalized:
+            return {
+                "category": "other",
+                "urgency": "medium",
+                "summary": "Issue summarized pending staff review; please add any missing details.",
+            }
         if "help request" in normalized:
             return {
                 "type_of_help": "general-support",

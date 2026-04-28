@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -11,6 +11,57 @@ class ReportRequest(BaseModel):
     description: str = Field(..., min_length=5, max_length=5000)
     image_url: Optional[str] = None
     location: Location
+
+
+class CivicReportCreate(BaseModel):
+    """Public report form payload stored in Firestore `reports` collection."""
+
+    category: str = Field(..., min_length=1, max_length=120)
+    description: str = Field(..., min_length=1, max_length=5000)
+    priority: Literal["low", "medium", "high"]
+    location: Location
+
+
+class CivicReportListItem(BaseModel):
+    """Single Firestore `reports` document for map clients."""
+
+    id: str
+    category: str
+    description: str
+    priority: str
+    status: str
+    location: Location
+    createdAt: Optional[str] = None
+    assignedVolunteerId: Optional[str] = None
+    assignedVolunteerName: Optional[str] = None
+    assignedDistanceKm: Optional[float] = None
+    assignedAt: Optional[str] = None
+
+
+class AssignReportRequest(BaseModel):
+    report_id: str = Field(..., min_length=1)
+
+
+class AssignReportResponse(BaseModel):
+    report_id: str
+    volunteer_id: str
+    volunteer_name: str
+    distance_km: float
+    status: str
+
+
+class RefineReportRequest(BaseModel):
+    description: str = Field(..., min_length=1, max_length=5000)
+
+
+class RefineReportResponse(BaseModel):
+    category: str
+    urgency: str
+    summary: str
+
+
+class ReportSavedResponse(BaseModel):
+    id: str
 
 
 class IssueAnalysis(BaseModel):

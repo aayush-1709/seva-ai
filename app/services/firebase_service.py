@@ -1,8 +1,11 @@
+from google.cloud.firestore import SERVER_TIMESTAMP
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import firebase_admin
 from firebase_admin import credentials, firestore
 from app.config import get_settings
+from app.models.schemas import Location
+from app.services.maps_service import MapsService
 
 
 class FirebaseService:
@@ -10,6 +13,7 @@ class FirebaseService:
         self.settings = get_settings()
         self._db = None
         self._issues_fallback: List[Dict] = []
+        self._reports_fallback: List[Dict] = []
         self._volunteers_fallback: List[Dict] = []
         self._initialize()
 
@@ -45,6 +49,281 @@ class FirebaseService:
             record = {"id": issue_id, **issue_payload}
             self._issues_fallback.append(record)
             return record
+
+    def save_report(self, report_payload: Dict) -> Dict:
+        """Write a civic report to the `reports` collection (web form)."""
+        location = report_payload.get("location") or {}
+        if self._db is None:
+            report_id = f"local-report-{len(self._reports_fallback) + 1}"
+            record = {
+                "id": report_id,
+                "category": report_payload["category"],
+                "description": report_payload["description"],
+                "priority": report_payload["priority"],
+                "location": location,
+                "status": "pending",
+                "createdAt": self._timestamp(),
+            }
+            self._reports_fallback.append(record)
+            return record
+
+        try:
+            ref = self._db.collection(self.settings.firestore_reports_collection).document()
+            ref.set(
+                {
+                    "category": report_payload["category"],
+                    "description": report_payload["description"],
+                    "priority": report_payload["priority"],
+                    "location": location,
+                    "status": "pending",
+                    "createdAt": SERVER_TIMESTAMP,
+                }
+            )
+            return {
+                "id": ref.id,
+                "category": report_payload["category"],
+                "description": report_payload["description"],
+                "priority": report_payload["priority"],
+                "location": location,
+                "status": "pending",
+            }
+        except Exception:
+            report_id = f"local-report-{len(self._reports_fallback) + 1}"
+            record = {
+                "id": report_id,
+                "category": report_payload["category"],
+                "description": report_payload["description"],
+                "priority": report_payload["priority"],
+                "location": location,
+                "status": "pending",
+                "createdAt": self._timestamp(),
+            }
+            self._reports_fallback.append(record)
+            return record
+
+    def list_civic_reports(self) -> List[Dict]:
+        """All documents from the `reports` collection (map / analytics)."""
+
+        def to_item(doc_id: str, data: Dict) -> Optional[Dict]:
+            loc = data.get("location")
+            lat_f: float
+            lng_f: float
+            if isinstance(loc, dict):
+                try:
+                    lat_f = float(loc["lat"])
+                    lng_f = float(loc["lng"])
+                except (KeyError, TypeError, ValueError):
+                    return None
+            else:
+                lat_attr = getattr(loc, "latitude", None)
+                lng_attr = getattr(loc, "longitude", None)
+                if lat_attr is None or lng_attr is None:
+                    return None
+                try:
+                    lat_f = float(lat_attr)
+                    lng_f = float(lng_attr)
+                except (TypeError, ValueError):
+                    return None
+            item: Dict = {
+                "id": doc_id,
+                "category": str(data.get("category", "other")),
+                "description": str(data.get("description", "")),
+                "priority": str(data.get("priority", "medium")).lower(),
+                "status": str(data.get("status", "pending")),
+                "location": {"lat": lat_f, "lng": lng_f},
+            }
+            ca = data.get("createdAt")
+            if ca is not None:
+                if hasattr(ca, "isoformat"):
+                    item["createdAt"] = ca.isoformat()
+                else:
+                    item["createdAt"] = str(ca)
+            av = data.get("assignedVolunteerId")
+            if av is not None:
+                item["assignedVolunteerId"] = str(av)
+            an = data.get("assignedVolunteerName")
+            if an is not None:
+                item["assignedVolunteerName"] = str(an)
+            ad = data.get("assignedDistanceKm")
+            if ad is not None:
+                try:
+                    item["assignedDistanceKm"] = float(ad)
+                except (TypeError, ValueError):
+                    pass
+            aa = data.get("assignedAt")
+            if aa is not None:
+                item["assignedAt"] = (
+                    aa.isoformat() if hasattr(aa, "isoformat") else str(aa)
+                )
+            return item
+
+        if self._db is None:
+            out: List[Dict] = []
+            for r in self._reports_fallback:
+                rid = str(r.get("id", ""))
+                payload = {k: v for k, v in r.items() if k != "id"}
+                row = to_item(rid, payload)
+                if row:
+                    out.append(row)
+            return out
+
+        try:
+            result: List[Dict] = []
+            for doc in self._db.collection(self.settings.firestore_reports_collection).stream():
+                row = to_item(doc.id, doc.to_dict() or {})
+                if row:
+                    result.append(row)
+            return result
+        except Exception:
+            out = []
+            for r in self._reports_fallback:
+                rid = str(r.get("id", ""))
+                payload = {k: v for k, v in r.items() if k != "id"}
+                row = to_item(rid, payload)
+                if row:
+                    out.append(row)
+            return out
+
+    @staticmethod
+    def _volunteer_coords(location: object) -> Optional[tuple[float, float]]:
+        if isinstance(location, dict):
+            try:
+                return float(location["lat"]), float(location["lng"])
+            except (KeyError, TypeError, ValueError):
+                return None
+        lat_a = getattr(location, "latitude", None)
+        lng_a = getattr(location, "longitude", None)
+        if lat_a is not None and lng_a is not None:
+            try:
+                return float(lat_a), float(lng_a)
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def ensure_demo_volunteers_local(self) -> None:
+        """Seed in-memory volunteers when Firestore is disabled and list is empty."""
+        if self._db is not None:
+            return
+        if self._volunteers_fallback:
+            return
+        for payload in (
+            {
+                "name": "Aisha Khan",
+                "phone": "+91-90000-10001",
+                "skills": ["delivery", "first-aid"],
+                "location": {"lat": 28.62, "lng": 77.205},
+            },
+            {
+                "name": "Rahul Mehta",
+                "phone": "+91-90000-10002",
+                "skills": ["logistics"],
+                "location": {"lat": 28.608, "lng": 77.218},
+            },
+            {
+                "name": "Sarah Jones",
+                "phone": "+91-90000-10003",
+                "skills": ["coordination"],
+                "location": {"lat": 28.625, "lng": 77.195},
+            },
+        ):
+            self.save_volunteer(payload)
+
+    def assign_nearest_volunteer_to_report(
+        self, report_id: str, *, max_radius_km: float
+    ) -> Dict[str, object]:
+        self.ensure_demo_volunteers_local()
+        reports = self.list_civic_reports()
+        report = next((r for r in reports if r["id"] == report_id), None)
+        if not report:
+            raise ValueError("Report not found")
+
+        report_loc = Location(**report["location"])
+        volunteers = self.get_volunteers()
+        candidates: List[tuple[float, Dict]] = []
+        for v in volunteers:
+            coords = self._volunteer_coords(v.get("location"))
+            if coords is None:
+                continue
+            dist = MapsService.calculate_distance_km(
+                report_loc, Location(lat=coords[0], lng=coords[1])
+            )
+            candidates.append((dist, v))
+
+        if not candidates:
+            raise ValueError("No volunteers available")
+
+        nearby = [(d, v) for d, v in candidates if d <= max_radius_km]
+        pool: List[tuple[float, Dict]] = nearby if nearby else list(candidates)
+        nearest_distance, nearest = min(pool, key=lambda x: x[0])
+
+        vid = str(nearest.get("id", ""))
+        vname = str(nearest.get("name", "Volunteer"))
+        updated = self._apply_report_assignment(
+            report_id, vid, vname, float(nearest_distance)
+        )
+        if updated is None:
+            raise ValueError("Failed to update report")
+        return {
+            "report_id": report_id,
+            "volunteer_id": vid,
+            "volunteer_name": vname,
+            "distance_km": float(nearest_distance),
+            "status": "assigned",
+        }
+
+    def _apply_report_assignment(
+        self,
+        report_id: str,
+        volunteer_id: str,
+        volunteer_name: str,
+        distance_km: float,
+    ) -> Optional[Dict]:
+        patch = {
+            "assignedVolunteerId": volunteer_id,
+            "assignedVolunteerName": volunteer_name,
+            "assignedDistanceKm": distance_km,
+            "assignedAt": SERVER_TIMESTAMP,
+            "status": "assigned",
+        }
+        if self._db is None:
+            for r in self._reports_fallback:
+                if str(r.get("id")) == report_id:
+                    r["assignedVolunteerId"] = volunteer_id
+                    r["assignedVolunteerName"] = volunteer_name
+                    r["assignedDistanceKm"] = distance_km
+                    r["assignedAt"] = self._timestamp()
+                    r["status"] = "assigned"
+                    return dict(r)
+            return None
+        try:
+            ref = self._db.collection(
+                self.settings.firestore_reports_collection
+            ).document(report_id)
+            snapshot = ref.get()
+            if not snapshot.exists:
+                return None
+            ref.update(patch)
+            data = snapshot.to_dict() or {}
+            data.update(
+                {
+                    "assignedVolunteerId": volunteer_id,
+                    "assignedVolunteerName": volunteer_name,
+                    "assignedDistanceKm": distance_km,
+                    "status": "assigned",
+                }
+            )
+            data["assignedAt"] = self._timestamp()
+            return {"id": report_id, **data}
+        except Exception:
+            for r in self._reports_fallback:
+                if str(r.get("id")) == report_id:
+                    r["assignedVolunteerId"] = volunteer_id
+                    r["assignedVolunteerName"] = volunteer_name
+                    r["assignedDistanceKm"] = distance_km
+                    r["assignedAt"] = self._timestamp()
+                    r["status"] = "assigned"
+                    return dict(r)
+            return None
 
     def get_issues(self) -> List[Dict]:
         if self._db is None:

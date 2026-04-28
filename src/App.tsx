@@ -3,24 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import React, { useState } from 'react';
+import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Map as MapIcon, 
-  Users, 
   BarChart3, 
   ClipboardList, 
-  BrainCircuit, 
   ShieldAlert, 
-  Settings, 
+  Settings as SettingsIcon, 
   HeartHandshake,
   Bell,
   Globe,
   PlusCircle,
-  Search,
-  MessageSquare,
-  ChevronRight,
   Menu,
   X
 } from 'lucide-react';
@@ -33,6 +28,8 @@ import ImpactMap from './pages/ImpactMap';
 import NGODashboard from './pages/NGODashboard';
 import Analytics from './pages/Analytics';
 import TaskBoard from './pages/TaskBoard';
+import NotFound from './pages/NotFound';
+import Settings from './pages/Settings';
 
 const SidebarLink = ({ to, icon: Icon, children, onClick }: { to: string, icon: any, children: React.ReactNode, onClick?: () => void }) => {
   const location = useLocation();
@@ -57,7 +54,20 @@ const SidebarLink = ({ to, icon: Icon, children, onClick }: { to: string, icon: 
 function Shell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [location.pathname]);
+
+  const headerNavClass = (...paths: string[]) => {
+    const active = paths.includes(location.pathname);
+    return `font-bold transition-all pb-1 border-b-2 ${
+      active
+        ? 'text-primary border-primary'
+        : 'text-slate-500 border-transparent hover:text-primary'
+    }`;
+  };
+
   return (
     <div className="min-h-screen flex">
       {/* Mobile Menu Backdrop */}
@@ -79,7 +89,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="px-6 mb-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <Link to="/" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <div className="p-2 bg-primary rounded-xl text-white">
               <HeartHandshake size={24} />
             </div>
@@ -87,7 +97,7 @@ function Shell({ children }: { children: React.ReactNode }) {
               <h2 className="text-xl font-black text-primary font-manrope">SevaAI</h2>
               <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">Empathetic AI Hub</p>
             </div>
-          </div>
+          </Link>
           <button 
             onClick={() => setIsMobileMenuOpen(false)} 
             className="lg:hidden p-3 text-slate-400 hover:text-slate-900"
@@ -100,18 +110,18 @@ function Shell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 flex flex-col gap-1">
           <SidebarLink to="/" icon={LayoutDashboard} onClick={() => setIsMobileMenuOpen(false)}>Overview</SidebarLink>
           <SidebarLink to="/map" icon={MapIcon} onClick={() => setIsMobileMenuOpen(false)}>Impact Map</SidebarLink>
-          <SidebarLink to="/analytics" icon={BarChart3} onClick={() => setIsMobileMenuOpen(false)}>Social Impact</SidebarLink>
+          <SidebarLink to="/insights" icon={BarChart3} onClick={() => setIsMobileMenuOpen(false)}>Social Impact</SidebarLink>
           <SidebarLink to="/tasks" icon={ClipboardList} onClick={() => setIsMobileMenuOpen(false)}>Task Center</SidebarLink>
           <SidebarLink to="/ngo" icon={ShieldAlert} onClick={() => setIsMobileMenuOpen(false)}>NGO Panel</SidebarLink>
         </nav>
 
         <div className="px-6 pt-6 mt-6 border-t border-slate-100">
-          <Link to="/volunteer" onClick={() => setIsMobileMenuOpen(false)} className="w-full bg-secondary-container text-on-secondary-container py-3 rounded-xl font-bold flex items-center justify-center gap-2 mb-4 hover:shadow-lg hover:shadow-secondary/20 transition-all active:scale-95">
+          <Link to="/community" onClick={() => setIsMobileMenuOpen(false)} className="w-full bg-secondary-container text-on-secondary-container py-3 rounded-xl font-bold flex items-center justify-center gap-2 mb-4 hover:shadow-lg hover:shadow-secondary/20 transition-all active:scale-95">
             <PlusCircle size={18} />
             Volunteer Now
           </Link>
           <div className="flex flex-col gap-2">
-            <SidebarLink to="/settings" icon={Settings} onClick={() => setIsMobileMenuOpen(false)}>Settings</SidebarLink>
+            <SidebarLink to="/settings" icon={SettingsIcon} onClick={() => setIsMobileMenuOpen(false)}>Settings</SidebarLink>
           </div>
         </div>
       </aside>
@@ -130,10 +140,10 @@ function Shell({ children }: { children: React.ReactNode }) {
             </button>
             <div className="lg:hidden font-black text-2xl text-primary font-manrope">SevaAI</div>
             <div className="hidden md:flex gap-6">
-              <Link to="/" className={`font-bold transition-all ${location.pathname === '/' ? 'text-primary border-b-2 border-primary pb-1' : 'text-slate-500 hover:text-primary'}`}>Dashboard</Link>
-              <Link to="/map" className={`font-medium transition-all ${location.pathname === '/map' ? 'text-primary' : 'text-slate-500 hover:text-primary'}`}>Map</Link>
-              <Link to="/community" className="text-slate-600 font-medium hover:text-primary">Community</Link>
-              <Link to="/insights" className="text-slate-600 font-medium hover:text-primary">Insights</Link>
+              <Link to="/" className={headerNavClass('/')}>Dashboard</Link>
+              <Link to="/map" className={headerNavClass('/map')}>Map</Link>
+              <Link to="/community" className={headerNavClass('/community', '/volunteer')}>Community</Link>
+              <Link to="/insights" className={headerNavClass('/insights', '/analytics')}>Insights</Link>
             </div>
           </div>
           
@@ -180,17 +190,19 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Shell><Dashboard /></Shell>} />
-        <Route path="/report" element={<Shell><Report /></Shell>} />
-        <Route path="/request" element={<Shell><RequestAsst /></Shell>} />
-        <Route path="/volunteer" element={<Shell><Volunteer /></Shell>} />
-        <Route path="/map" element={<Shell><ImpactMap /></Shell>} />
-        <Route path="/ngo" element={<Shell><NGODashboard /></Shell>} />
-        <Route path="/analytics" element={<Shell><Analytics /></Shell>} />
-        <Route path="/tasks" element={<Shell><TaskBoard /></Shell>} />
-      </Routes>
-    </Router>
+    <Routes>
+      <Route path="/" element={<Shell><Dashboard /></Shell>} />
+      <Route path="/report" element={<Shell><Report /></Shell>} />
+      <Route path="/request" element={<Shell><RequestAsst /></Shell>} />
+      <Route path="/community" element={<Shell><Volunteer /></Shell>} />
+      <Route path="/volunteer" element={<Shell><Volunteer /></Shell>} />
+      <Route path="/map" element={<Shell><ImpactMap /></Shell>} />
+      <Route path="/ngo" element={<Shell><NGODashboard /></Shell>} />
+      <Route path="/insights" element={<Shell><Analytics /></Shell>} />
+      <Route path="/analytics" element={<Navigate to="/insights" replace />} />
+      <Route path="/tasks" element={<Shell><TaskBoard /></Shell>} />
+      <Route path="/settings" element={<Shell><Settings /></Shell>} />
+      <Route path="*" element={<Shell><NotFound /></Shell>} />
+    </Routes>
   );
 }

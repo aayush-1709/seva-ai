@@ -15,6 +15,6 @@ View your app in AI Studio: https://ai.studio/apps/2dfa1461-52d6-4e45-9016-f4e7f
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Copy environment template and add your keys: copy `.env.example` to `.env` in the `seva-ai` folder (see comments inside for `GEMINI_API_KEY`, Firebase JSON path, and `VITE_*` vars).
 3. Run the app:
    `npm run dev`

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 const tasks = [
   { id: 1, title: 'Food Packet Distribution', location: 'Northern Sector', category: 'Food', priority: 'High', time: 'Started 12m ago', volunteers: 4, needed: 10, status: 'Active' },
@@ -229,9 +230,12 @@ export default function TaskBoard() {
             <p className="text-slate-500 font-medium">You are in the top 5% of volunteers in your sector this week!</p>
           </div>
         </div>
-        <button className="px-10 py-5 bg-secondary text-on-secondary rounded-[2.5rem] font-black text-lg uppercase tracking-tight hover:shadow-2xl hover:shadow-secondary/30 transition-all active:scale-95">
+        <Link
+          to="/community"
+          className="px-10 py-5 bg-secondary text-on-secondary rounded-[2.5rem] font-black text-lg uppercase tracking-tight hover:shadow-2xl hover:shadow-secondary/30 transition-all active:scale-95 inline-flex items-center justify-center text-center"
+        >
           View Achievements
-        </button>
+        </Link>
       </section>
     </div>
   );

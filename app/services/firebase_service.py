@@ -1,3 +1,5 @@
+import json
+import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import firebase_admin
@@ -15,11 +17,21 @@ class FirebaseService:
 
     def _initialize(self) -> None:
         cred_path = self.settings.firebase_credentials_path
-        if not cred_path:
+        cred_json = os.getenv("FIREBASE_CREDENTIALS_JSON", "")
+
+        if not cred_path and not cred_json:
             return
         try:
             if not firebase_admin._apps:
-                firebase_admin.initialize_app(credentials.Certificate(cred_path))
+                if cred_path and os.path.isfile(cred_path):
+                    # Local development: use the credentials file
+                    firebase_admin.initialize_app(credentials.Certificate(cred_path))
+                elif cred_json:
+                    # Cloud deployment: parse JSON string from env var
+                    cred_dict = json.loads(cred_json)
+                    firebase_admin.initialize_app(credentials.Certificate(cred_dict))
+                else:
+                    return
             self._db = firestore.client()
         except Exception:
             self._db = None

@@ -17,18 +17,29 @@ app = FastAPI(
     version="1.0.0",
 )
 
-_default_origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
 _extra = os.getenv("ALLOWED_ORIGINS", "")
-if _extra:
-    _default_origins.extend([o.strip() for o in _extra.split(",") if o.strip()])
+
+if _extra.strip() == "*":
+    # Allow every origin (simplest for hackathons / demos)
+    _allowed_origins = ["*"]
+    _allow_credentials = False  # CORS spec: credentials not allowed with "*"
+else:
+    _allowed_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    if _extra:
+        _allowed_origins.extend(
+            [o.strip() for o in _extra.split(",") if o.strip()]
+        )
+    _allow_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_default_origins,
-    allow_credentials=True,
+    allow_origins=_allowed_origins,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

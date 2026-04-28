@@ -1,265 +1,359 @@
-import { 
-  Map as MapIcon, 
-  Search, 
-  Filter, 
-  Layers, 
-  Navigation2, 
-  Zap, 
-  AlertTriangle, 
-  Target, 
-  Clock,
-  ChevronRight,
-  Maximize2,
-  Droplets,
-  HandHelping,
-  Building2
+import { useCallback, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Crosshair,
+  Loader2,
+  MapPin,
+  RefreshCw,
+  ShieldAlert,
+  Users,
+  Building2,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { useState } from 'react';
 
-const activeHotspots = [
-  { id: 1, type: 'emergency', location: 'Northern Sector', status: 'critical', count: 12, pos: { x: '30%', y: '40%' } },
-  { id: 2, type: 'food', location: 'City Center', status: 'stable', count: 8, pos: { x: '60%', y: '55%' } },
-  { id: 3, type: 'water', location: 'Industrial Zone', status: 'urgent', count: 15, pos: { x: '45%', y: '70%' } },
-  { id: 4, type: 'power', location: 'Suburban East', status: 'stable', count: 4, pos: { x: '75%', y: '35%' } },
-];
+type ImportMetaEnvLike = {
+  VITE_API_BASE_URL?: string;
+};
 
-const deployments = [
-  { id: 1, team: 'Rescue Team Delta', task: 'Flood Evacuation', time: '5m ago', status: 'active' },
-  { id: 2, team: 'Food Fleet 7', task: 'Grocery Drop', time: '12m ago', status: 'dispatched' },
-  { id: 3, team: 'Volunteer Unit 92', task: 'Leak Repair', time: '28m ago', status: 'en-route' },
-];
+type Location = {
+  lat: number;
+  lng: number;
+};
+
+type Issue = {
+  id: string;
+  description: string;
+  image_url?: string | null;
+  location: Location;
+  category: string;
+  urgency: string;
+  summary: string;
+  suggested_ngo: string;
+};
+
+type NGO = {
+  name: string;
+  category: string;
+  contact: string;
+};
+
+type ServiceHealth = {
+  gemini_key_loaded: boolean;
+  gemini_strict_mode: boolean;
+  maps_key_loaded: boolean;
+  firebase_credentials_path_loaded: boolean;
+};
+
+const API_BASE_URL =
+  ((import.meta as ImportMeta & { env?: ImportMetaEnvLike }).env?.VITE_API_BASE_URL as string | undefined) ??
+  'http://127.0.0.1:8000';
+
+async function parseResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(text || `Request failed with status ${response.status}`);
+  }
+  return (text ? JSON.parse(text) : {}) as T;
+}
 
 export default function ImpactMap() {
-  const [activeTab, setActiveTab] = useState('heatmaps');
-  const [selectedHotspot, setSelectedHotspot] = useState<any>(null);
+  const [lat, setLat] = useState('28.6139');
+  const [lng, setLng] = useState('77.2090');
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealth | null>(null);
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [ngos, setNgos] = useState<NGO[]>([]);
+  const [selectedIssueId, setSelectedIssueId] = useState<string>('');
+  const [statusText, setStatusText] = useState<string>('Ready');
+  const [loading, setLoading] = useState(false);
+
+  const selectedIssue = useMemo(
+    () => issues.find((issue) => issue.id === selectedIssueId),
+    [issues, selectedIssueId]
+  );
+
+  const stats = useMemo(() => {
+    const criticalCount = issues.filter((issue) =>
+      issue.urgency.toLowerCase().includes('high') || issue.urgency.toLowerCase().includes('critical')
+    ).length;
+
+    const categories = new Set(issues.map((issue) => issue.category.toLowerCase()));
+    return {
+      totalIssues: issues.length,
+      criticalCount,
+      categoryCount: categories.size,
+      ngoCount: ngos.length,
+    };
+  }, [issues, ngos]);
+
+  const refreshDashboard = useCallback(async () => {
+    const parsedLat = Number(lat);
+    const parsedLng = Number(lng);
+
+    if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
+      setStatusText('Latitude/Longitude must be valid numbers.');
+      return;
+    }
+
+    setLoading(true);
+    setStatusText('Refreshing data from backend...');
+    try {
+      const [healthData, ngoData, nearbyData] = await Promise.all([
+        fetch(`${API_BASE_URL}/health/services`).then((res) => parseResponse<ServiceHealth>(res)),
+        fetch(`${API_BASE_URL}/ngos`).then((res) => parseResponse<NGO[]>(res)),
+        fetch(`${API_BASE_URL}/issues/nearby?lat=${parsedLat}&lng=${parsedLng}`).then((res) =>
+          parseResponse<{ issues: Issue[] }>(res)
+        ),
+      ]);
+
+      setServiceHealth(healthData);
+      setNgos(ngoData);
+      setIssues(nearbyData.issues ?? []);
+      setSelectedIssueId(nearbyData.issues?.[0]?.id ?? '');
+      setStatusText('Dashboard updated successfully.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setStatusText(`Refresh failed: ${message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [lat, lng]);
+
+  const assignIssue = useCallback(async () => {
+    if (!selectedIssueId) {
+      setStatusText('Select an issue first to assign.');
+      return;
+    }
+
+    setLoading(true);
+    setStatusText(`Assigning volunteer to ${selectedIssueId}...`);
+    try {
+      const result = await fetch(`${API_BASE_URL}/tasks/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issue_id: selectedIssueId }),
+      }).then((res) => parseResponse<{ volunteer_name: string; distance_km: number }>(res));
+
+      setStatusText(
+        `Assigned to ${result.volunteer_name} (${result.distance_km.toFixed(2)} km away).`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setStatusText(`Assignment failed: ${message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedIssueId]);
 
   return (
-    <div className="h-[calc(100vh-64px)] flex overflow-hidden">
-      {/* Sidebar Controls */}
-      <aside className="w-80 border-r border-slate-200 bg-white flex flex-col z-20 shadow-2xl relative">
-        <div className="p-6 space-y-6 flex-1 overflow-y-auto">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-black text-slate-800 font-manrope">Live Impact Map</h1>
-            <p className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-tight">Geospatial Intelligence</p>
+    <div className="min-h-[calc(100vh-64px)] bg-slate-50 p-6 space-y-6">
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900">Impact Operations Console</h1>
+            <p className="text-sm text-slate-600 mt-1">
+              Live backend-connected view for service health, nearby issues, NGOs, and task assignment.
+            </p>
           </div>
-
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search sectors, hotspots..."
-              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 pl-10 pr-4 text-xs font-bold outline-none focus:ring-4 focus:ring-primary/10 transition-all"
-            />
-          </div>
-
-          <div className="space-y-4 pt-4 border-t border-slate-100">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Map Layers</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <button className="flex items-center gap-2 p-3 bg-primary text-white rounded-xl text-xs font-bold shadow-lg shadow-primary/20">
-                <Zap size={14} /> Heatmaps
-              </button>
-              <button className="flex items-center gap-2 p-3 bg-slate-50 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-all">
-                <Target size={14} /> Critical
-              </button>
-              <button className="flex items-center gap-2 p-3 bg-slate-50 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-all">
-                <Building2 size={14} /> NGO Hubs
-              </button>
-              <button className="flex items-center gap-2 p-3 bg-slate-50 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-all">
-                <Navigation2 size={14} /> Routes
-              </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-slate-100 rounded-xl px-3 py-2">
+              <MapPin size={16} className="text-slate-500" />
+              <input
+                className="bg-transparent w-28 text-sm font-semibold outline-none"
+                value={lat}
+                onChange={(e) => setLat(e.target.value)}
+                placeholder="Latitude"
+              />
+              <input
+                className="bg-transparent w-28 text-sm font-semibold outline-none border-l border-slate-300 pl-2"
+                value={lng}
+                onChange={(e) => setLng(e.target.value)}
+                placeholder="Longitude"
+              />
             </div>
+            <button
+              onClick={refreshDashboard}
+              disabled={loading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white font-bold disabled:opacity-60"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              Refresh
+            </button>
+          </div>
+        </div>
+        <p className="text-xs mt-4 text-slate-500">{statusText}</p>
+      </section>
+
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4">
+          <p className="text-xs text-slate-500 font-semibold">Nearby Issues</p>
+          <p className="text-2xl font-black text-slate-900">{stats.totalIssues}</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-4">
+          <p className="text-xs text-slate-500 font-semibold">Critical/Urgent</p>
+          <p className="text-2xl font-black text-red-600">{stats.criticalCount}</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-4">
+          <p className="text-xs text-slate-500 font-semibold">Issue Categories</p>
+          <p className="text-2xl font-black text-slate-900">{stats.categoryCount}</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-4">
+          <p className="text-xs text-slate-500 font-semibold">Available NGOs</p>
+          <p className="text-2xl font-black text-slate-900">{stats.ngoCount}</p>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-black text-slate-900 inline-flex items-center gap-2">
+              <Crosshair size={18} /> Nearby Issues Feed
+            </h2>
+            <span className="text-xs text-slate-500">Source: `GET /issues/nearby`</span>
           </div>
 
-          <div className="space-y-4 pt-4 border-t border-slate-100">
-            <div className="flex justify-between items-center">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Active Deployments</h3>
-              <span className="text-[10px] font-black text-green-500 bg-green-50 px-2 py-0.5 rounded">3 DISPATCHED</span>
+          {issues.length === 0 ? (
+            <div className="p-8 border border-dashed border-slate-300 rounded-xl text-center text-slate-500">
+              No issues found for this location. Submit a report first, then refresh.
             </div>
-            <div className="space-y-3">
-              {deployments.map((d) => (
-                <div key={d.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 group cursor-pointer hover:border-primary transition-all">
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="text-[11px] font-black text-slate-800">{d.team}</span>
-                    <Clock size={10} className="text-slate-400" />
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-500 font-medium">{d.task}</span>
-                    <span className="text-[9px] font-bold text-primary group-hover:translate-x-1 transition-transform uppercase tracking-widest">{d.time}</span>
-                  </div>
+          ) : (
+            <div className="space-y-3 max-h-[420px] overflow-auto pr-1">
+              {issues.map((issue) => {
+                const isSelected = selectedIssueId === issue.id;
+                return (
+                  <button
+                    key={issue.id}
+                    onClick={() => setSelectedIssueId(issue.id)}
+                    className={`w-full text-left p-4 rounded-xl border transition ${
+                      isSelected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-slate-900">{issue.summary || issue.description}</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {issue.category} · urgency: {issue.urgency}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          ({issue.location.lat.toFixed(4)}, {issue.location.lng.toFixed(4)})
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                        {issue.id}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <h2 className="text-lg font-black text-slate-900 inline-flex items-center gap-2 mb-4">
+              <Users size={18} /> Assignment
+            </h2>
+            <div className="space-y-2 text-sm">
+              <p className="text-slate-600">Selected Issue:</p>
+              <p className="font-semibold text-slate-900 break-all">
+                {selectedIssue ? selectedIssue.id : 'None selected'}
+              </p>
+              {selectedIssue && (
+                <p className="text-xs text-slate-500">
+                  Suggested NGO: {selectedIssue.suggested_ngo}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={assignIssue}
+              disabled={loading || !selectedIssue}
+              className="mt-4 w-full px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold disabled:opacity-60"
+            >
+              Assign Nearest Volunteer
+            </button>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <h2 className="text-lg font-black text-slate-900 inline-flex items-center gap-2 mb-4">
+              <Building2 size={18} /> NGO Directory
+            </h2>
+            <div className="space-y-2 max-h-56 overflow-auto pr-1">
+              {ngos.map((ngo) => (
+                <div key={ngo.name} className="p-3 rounded-xl border border-slate-200 bg-slate-50">
+                  <p className="font-semibold text-slate-900">{ngo.name}</p>
+                  <p className="text-xs text-slate-600">
+                    {ngo.category} · {ngo.contact}
+                  </p>
                 </div>
               ))}
+              {ngos.length === 0 && <p className="text-sm text-slate-500">No NGO data loaded yet.</p>}
             </div>
           </div>
         </div>
+      </section>
 
-        <div className="p-4 bg-slate-900 text-white rounded-t-[2.5rem] mt-auto">
-          <div className="flex items-center justify-between mb-4 px-2">
-            <div>
-              <div className="text-xl font-black font-manrope">2.4k Reports</div>
-              <div className="text-[10px] text-zinc-400 font-bold uppercase">Processed Globally</div>
-            </div>
-            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-              <Layers size={20} />
-            </div>
+      <section className="bg-white rounded-2xl border border-slate-200 p-5">
+        <h2 className="text-lg font-black text-slate-900 mb-3">Service Health</h2>
+        {!serviceHealth ? (
+          <p className="text-sm text-slate-500">
+            Click refresh to fetch `GET /health/services`.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatusPill
+              ok={serviceHealth.gemini_key_loaded}
+              label="Gemini Key"
+              okText="Loaded"
+              badText="Missing"
+            />
+            <StatusPill
+              ok={serviceHealth.maps_key_loaded}
+              label="Maps Key"
+              okText="Loaded"
+              badText="Missing"
+            />
+            <StatusPill
+              ok={serviceHealth.firebase_credentials_path_loaded}
+              label="Firebase Credentials"
+              okText="Loaded"
+              badText="Missing"
+            />
+            <StatusPill
+              ok={!serviceHealth.gemini_strict_mode}
+              label="Gemini Mode"
+              okText="Fallback Enabled"
+              badText="Strict"
+            />
           </div>
-          <button className="w-full py-4 bg-white/10 hover:bg-white/20 rounded-2xl text-xs font-black transition-all border border-white/10">
-            Download Report (GeoJSON)
-          </button>
-        </div>
-      </aside>
+        )}
+      </section>
+    </div>
+  );
+}
 
-      {/* Map View Area */}
-      <main className="flex-1 relative bg-[#F8FAFC]">
-        {/* Fake Map Grid/Illustration */}
-        <div className="absolute inset-0 z-0 overflow-hidden">
-          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#CBD5E1_1px,transparent_1px)] [background-size:20px_20px]" />
-          <svg className="w-full h-full opacity-20" viewBox="0 0 1000 1000">
-            <path d="M100,200 Q300,100 500,200 T900,200" fill="none" stroke="#64748B" strokeWidth="2" />
-            <path d="M200,900 L800,900" fill="none" stroke="#64748B" strokeWidth="2" strokeDasharray="10 5" />
-            <circle cx="500" cy="500" r="400" fill="none" stroke="#64748B" strokeWidth="0.5" />
-          </svg>
-          
-          {/* Animated Heatmap Pulses */}
-          <motion.div 
-            animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.3, 0.1] }}
-            transition={{ duration: 4, repeat: Infinity }}
-            className="absolute top-1/3 left-1/4 w-[40%] h-[40%] bg-blue-500/20 blur-[120px] rounded-full"
-          />
-          <motion.div 
-            animate={{ scale: [1, 1.4, 1], opacity: [0.1, 0.4, 0.1] }}
-            transition={{ duration: 6, repeat: Infinity, delay: 1 }}
-            className="absolute bottom-1/4 right-1/4 w-[30%] h-[30%] bg-red-500/20 blur-[100px] rounded-full"
-          />
-        </div>
+type StatusPillProps = {
+  ok: boolean;
+  label: string;
+  okText: string;
+  badText: string;
+};
 
-        {/* Map UI Overlays */}
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10 glass-panel border-white/40 shadow-2xl flex items-center gap-1 p-1">
-          {['Needs', 'NGOs', 'Shelters', 'Volunteers'].map((tag) => (
-            <button 
-              key={tag}
-              onClick={() => setActiveTab(tag.toLowerCase())}
-              className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${activeTab === tag.toLowerCase() ? 'bg-primary text-white shadow-lg' : 'text-slate-600 hover:bg-white/50'}`}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-
-        <div className="absolute top-6 right-6 z-10 space-y-2">
-          <button 
-            className="w-12 h-12 glass-panel border-white shadow-lg flex items-center justify-center text-slate-700 hover:bg-white transition-all active:scale-95"
-            aria-label="Find my location"
-          >
-            <Navigation2 size={20} />
-          </button>
-          <button 
-            className="w-12 h-12 glass-panel border-white shadow-lg flex items-center justify-center text-slate-700 hover:bg-white transition-all active:scale-95"
-            aria-label="Maximize map view"
-          >
-            <Maximize2 size={20} />
-          </button>
-        </div>
-
-        {/* Hotspot Markers */}
-        <div className="absolute inset-0 pointer-events-none">
-          {activeHotspots.map((spot) => (
-            <div 
-              key={spot.id} 
-              className="absolute group pointer-events-auto cursor-pointer"
-              style={{ left: spot.pos.x, top: spot.pos.y }}
-              onClick={() => setSelectedHotspot(spot)}
-            >
-              <div className="relative">
-                <motion.div 
-                  animate={{ scale: [1, 1.5, 1], opacity: [0.3, 0.1, 0.3] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                  className={`absolute -inset-4 rounded-full ${spot.status === 'critical' ? 'bg-red-500' : spot.status === 'urgent' ? 'bg-orange-500' : 'bg-blue-500'}`}
-                />
-                <div className={`w-6 h-6 rounded-full border-2 border-white shadow-xl ${spot.status === 'critical' ? 'bg-red-500' : spot.status === 'urgent' ? 'bg-orange-500' : 'bg-blue-500'} flex items-center justify-center text-[10px] text-white font-black`}>
-                  {spot.count}
-                </div>
-                
-                {/* Tooltip on hover */}
-                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 text-white p-3 rounded-xl shadow-2xl min-w-[140px] z-50">
-                  <div className="text-[9px] font-black uppercase text-zinc-400 mb-1 leading-none">{spot.location}</div>
-                  <div className="text-[11px] font-bold mb-2">{spot.count} Pending reports</div>
-                  <div className="flex items-center gap-2 border-t border-white/10 pt-2">
-                    <span className="text-[9px] font-black text-primary hover:underline">View Sector Details</span>
-                    <ChevronRight size={10} className="text-white" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Selected Hotspot Detail Card */}
-        <AnimatePresence>
-          {selectedHotspot && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              className="absolute bottom-6 right-6 w-96 glass-panel border-white/60 shadow-2xl p-8 z-30"
-            >
-              <button 
-                onClick={() => setSelectedHotspot(null)}
-                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-800 transition-colors"
-                aria-label="Close hotspot details"
-              >
-                <Maximize2 size={20} className="rotate-45" />
-              </button>
-
-              <div className="flex items-center gap-3 mb-6">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white ${selectedHotspot.status === 'critical' ? 'bg-red-500' : 'bg-blue-500'}`}>
-                  {selectedHotspot.type === 'emergency' ? <AlertTriangle size={24} /> : selectedHotspot.type === 'food' ? <Droplets size={24} /> : <Zap size={24} />}
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-800 font-manrope">{selectedHotspot.location}</h3>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest leading-none mt-1">{selectedHotspot.status} PRIORITY</p>
-                </div>
-              </div>
-
-              <div className="space-y-4 mb-8">
-                <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <span className="text-xs font-bold text-slate-500">Active Needs</span>
-                  <span className="text-lg font-black text-slate-800">24</span>
-                </div>
-                <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <span className="text-xs font-bold text-slate-500">Resources Allocated</span>
-                  <span className="text-lg font-black text-slate-800">12 Units</span>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button className="flex-1 py-4 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:shadow-xl transition-all">
-                  Dispatch Team
-                </button>
-                <button className="p-4 bg-slate-100 text-slate-600 rounded-2xl hover:bg-slate-200 transition-all">
-                  <HandHelping size={20} />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Bottom Legend Overlay */}
-        <div className="absolute bottom-6 left-6 z-10 glass-panel border-white/60 shadow-xl px-4 py-3 flex gap-6">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Critical Needs</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 bg-orange-500 rounded-full" />
-            <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Urgent Response</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 bg-blue-500 rounded-full" />
-            <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Resources Found</span>
-          </div>
-        </div>
-      </main>
+function StatusPill({ ok, label, okText, badText }: StatusPillProps) {
+  return (
+    <div className="rounded-xl border border-slate-200 p-3 flex items-center gap-3">
+      {ok ? (
+        <CheckCircle2 size={18} className="text-emerald-600" />
+      ) : (
+        <ShieldAlert size={18} className="text-amber-600" />
+      )}
+      <div>
+        <p className="text-xs text-slate-500">{label}</p>
+        <p className={`text-sm font-bold ${ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+          {ok ? okText : badText}
+        </p>
+      </div>
     </div>
   );
 }

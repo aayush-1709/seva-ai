@@ -40,6 +40,8 @@ class CivicReportListItem(BaseModel):
 
 class AssignReportRequest(BaseModel):
     report_id: str = Field(..., min_length=1)
+    # When set, assign this volunteer explicitly (volunteer claiming a task).
+    volunteer_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
 
 class AssignReportResponse(BaseModel):
@@ -62,6 +64,14 @@ class RefineReportResponse(BaseModel):
 
 class ReportSavedResponse(BaseModel):
     id: str
+
+
+class ReportStatusUpdateRequest(BaseModel):
+    """Update lifecycle status on a civic report (e.g. mark field work complete)."""
+
+    status: Literal["pending", "assigned", "in_progress", "resolved"]
+    # When resolving, pass the acting volunteer ID to prove assignment ownership.
+    volunteer_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
 
 class IssueAnalysis(BaseModel):

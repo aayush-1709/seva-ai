@@ -18,6 +18,8 @@ import { motion } from 'motion/react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import { apiUrl } from '../lib/api';
+
 const resources = [
   { id: 'food', name: 'Food & Groceries', icon: UtensilsCrossed, color: 'bg-green-500' },
   { id: 'medical', name: 'Medical Aid', icon: Stethoscope, color: 'bg-red-500' },
@@ -27,16 +29,79 @@ const resources = [
   { id: 'mental', name: 'Mental Support', icon: Heart, color: 'bg-teal-500' },
 ];
 
+type NGO = {
+  name: string;
+  category: string;
+  contact: string;
+  distance_km?: number | null;
+};
+
 export default function RequestAsst() {
   const [selectedResources, setSelectedResources] = useState<string[]>([]);
   const [urgency, setUrgency] = useState('standard');
   const [quantity, setQuantity] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [matchedNgos, setMatchedNgos] = useState<NGO[]>([]);
+  const [ticketId, setTicketId] = useState('');
+  const [lat, setLat] = useState('28.6139');
+  const [lng, setLng] = useState('77.2090');
 
   const toggleResource = (id: string) => {
     setSelectedResources(prev => 
       prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]
     );
+  };
+
+  const submitHelpRequest = async () => {
+    setError('');
+    if (selectedResources.length === 0) {
+      setError('Select at least one type of support.');
+      return;
+    }
+
+    const parsedLat = Number(lat);
+    const parsedLng = Number(lng);
+    if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
+      setError('Latitude and longitude must be valid numbers.');
+      return;
+    }
+
+    const selectedLabels = resources
+      .filter((resource) => selectedResources.includes(resource.id))
+      .map((resource) => resource.name);
+    const requestText = [
+      `Urgency: ${urgency}`,
+      `Beneficiaries: ${quantity}`,
+      `Needed resources: ${selectedLabels.join(', ')}`,
+      notes.trim() ? `Notes: ${notes.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('. ');
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(apiUrl('/help'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          request_text: requestText,
+          location: { lat: parsedLat, lng: parsedLng },
+        }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(text || `Request failed with status ${response.status}`);
+      const data = (text ? JSON.parse(text) : []) as NGO[];
+      setMatchedNgos(Array.isArray(data) ? data : []);
+      setTicketId(`RQ-${Date.now().toString().slice(-8)}`);
+      setIsSubmitted(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to submit request.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (isSubmitted) {
@@ -56,8 +121,22 @@ export default function RequestAsst() {
           </p>
           <div className="p-4 bg-slate-50 rounded-2xl text-left border border-slate-100">
             <div className="text-[10px] uppercase font-bold text-slate-400 mb-1">Ticket ID</div>
-            <div className="text-lg font-mono font-bold text-slate-800 tracking-wider">#RQ-942-0128</div>
+            <div className="text-lg font-mono font-bold text-slate-800 tracking-wider">#{ticketId || 'RQ-PENDING'}</div>
           </div>
+          {matchedNgos.length > 0 && (
+            <div className="p-4 bg-blue-50 rounded-2xl text-left border border-blue-100 space-y-2">
+              <div className="text-[10px] uppercase font-bold text-blue-500 mb-1">Matched NGOs</div>
+              {matchedNgos.slice(0, 3).map((ngo) => (
+                <div key={`${ngo.name}-${ngo.contact}`} className="text-sm">
+                  <div className="font-bold text-slate-800">{ngo.name}</div>
+                  <div className="text-slate-600">{ngo.category} - {ngo.contact}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {matchedNgos.length === 0 && (
+            <p className="text-xs text-slate-500">No NGO matches were returned. Our team will still review this request.</p>
+          )}
           <Link to="/" className="block w-full py-4 bg-primary text-white rounded-2xl font-black transition-all hover:shadow-xl active:scale-95">
             Return to Dashboard
           </Link>
@@ -179,8 +258,26 @@ export default function RequestAsst() {
               </div>
               <textarea 
                 placeholder="Briefly describe the specific needs (e.g. 'Infant formula needed for 3 month old, preference for brand X if possible')"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
                 className="w-full h-32 glass-panel p-6 focus:ring-4 focus:ring-blue-400/20 outline-none transition-all placeholder:text-slate-400 font-medium text-slate-800 resize-none"
               />
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={lat}
+                  onChange={(e) => setLat(e.target.value)}
+                  placeholder="Latitude"
+                  className="w-full rounded-2xl border border-slate-200 p-4 font-medium outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <input
+                  type="text"
+                  value={lng}
+                  onChange={(e) => setLng(e.target.value)}
+                  placeholder="Longitude"
+                  className="w-full rounded-2xl border border-slate-200 p-4 font-medium outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
             </div>
           </section>
         </div>
@@ -232,13 +329,14 @@ export default function RequestAsst() {
               </div>
 
               <button 
-                onClick={() => setIsSubmitted(true)}
-                disabled={selectedResources.length === 0}
+                onClick={() => void submitHelpRequest()}
+                disabled={selectedResources.length === 0 || isSubmitting}
                 className="w-full py-5 bg-primary text-white rounded-[2.5rem] font-black text-xl uppercase tracking-tighter disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-2xl hover:shadow-primary/30 transition-all transform active:scale-95 flex items-center justify-center gap-4"
               >
-                Send Request
+                {isSubmitting ? 'Sending...' : 'Send Request'}
                 <HandHelping size={24} />
               </button>
+              {error && <p className="text-xs text-red-600 font-semibold">{error}</p>}
             </div>
           </div>
         </div>

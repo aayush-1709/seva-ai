@@ -283,6 +283,140 @@ class FirebaseService:
             "status": "assigned",
         }
 
+    def assign_specific_volunteer_to_report(
+        self, report_id: str, volunteer_id: str, *, max_radius_km: float
+    ) -> Dict[str, object]:
+        """Assign one volunteer by ID (volunteer self-claim). Respects collision with other assignees."""
+        self.ensure_demo_volunteers_local()
+        reports = self.list_civic_reports()
+        report = next((r for r in reports if r["id"] == report_id), None)
+        if not report:
+            raise ValueError("Report not found")
+
+        existing_raw = report.get("assignedVolunteerId")
+        existing = str(existing_raw).strip() if existing_raw is not None else ""
+        volunteer_id_clean = volunteer_id.strip()
+        if existing and existing != volunteer_id_clean:
+            raise ValueError("Report already assigned to another volunteer")
+
+        report_loc = Location(**report["location"])
+        volunteer = None
+        for v in self.get_volunteers():
+            if str(v.get("id", "")) == volunteer_id_clean:
+                volunteer = v
+                break
+        if volunteer is None:
+            raise ValueError("Volunteer not found")
+
+        coords = self._volunteer_coords(volunteer.get("location"))
+        if coords is None:
+            raise ValueError("Volunteer has no usable location coordinates")
+
+        distance = MapsService.calculate_distance_km(
+            report_loc, Location(lat=coords[0], lng=coords[1])
+        )
+        if distance > max_radius_km * 8:
+            raise ValueError(
+                f"Volunteer is too far from this report ({distance:.1f} km). "
+                "Move closer or contact dispatch."
+            )
+
+        vname = str(volunteer.get("name", "Volunteer"))
+        updated = self._apply_report_assignment(
+            report_id, volunteer_id_clean, vname, float(distance)
+        )
+        if updated is None:
+            raise ValueError("Failed to update report")
+        return {
+            "report_id": report_id,
+            "volunteer_id": volunteer_id_clean,
+            "volunteer_name": vname,
+            "distance_km": float(distance),
+            "status": "assigned",
+        }
+
+    def patch_report_status(
+        self,
+        report_id: str,
+        *,
+        status: str,
+        verifier_volunteer_id: Optional[str] = None,
+    ) -> Dict:
+        allowed = {"pending", "assigned", "in_progress", "resolved"}
+        if status not in allowed:
+            raise ValueError("Invalid status")
+
+        report_row = next(
+            (r for r in self.list_civic_reports() if r["id"] == report_id), None
+        )
+        if not report_row:
+            raise ValueError("Report not found")
+
+        if status == "resolved" and verifier_volunteer_id:
+            assigned = str(report_row.get("assignedVolunteerId") or "").strip()
+            if assigned != verifier_volunteer_id.strip():
+                raise ValueError(
+                    "Only the assigned volunteer can mark this report resolved"
+                )
+
+        if status == "in_progress" and verifier_volunteer_id:
+            assigned = str(report_row.get("assignedVolunteerId") or "").strip()
+            if assigned != verifier_volunteer_id.strip():
+                raise ValueError(
+                    "Only the assigned volunteer can move this report to in progress"
+                )
+
+        def apply_local(rid: str, new_status: str) -> Dict:
+            for r in self._reports_fallback:
+                if str(r.get("id")) == rid:
+                    r["status"] = new_status
+                    if new_status == "in_progress":
+                        r["statusStartedAt"] = self._timestamp()
+                    if new_status == "resolved":
+                        r["resolvedAt"] = self._timestamp()
+                    return dict(r)
+            raise ValueError("Report not found")
+
+        patch: Dict = {"status": status}
+        if status == "in_progress":
+            patch["statusStartedAt"] = SERVER_TIMESTAMP
+        if status == "resolved":
+            patch["resolvedAt"] = SERVER_TIMESTAMP
+
+        if self._db is None:
+            return apply_local(report_id, status)
+
+        try:
+            ref = self._db.collection(
+                self.settings.firestore_reports_collection
+            ).document(report_id)
+            snapshot = ref.get()
+            if not snapshot.exists:
+                raise ValueError("Report not found")
+            data = snapshot.to_dict() or {}
+            if status == "resolved" and verifier_volunteer_id:
+                assigned = str(data.get("assignedVolunteerId") or "").strip()
+                if assigned != verifier_volunteer_id.strip():
+                    raise ValueError(
+                        "Only the assigned volunteer can mark this report resolved"
+                    )
+            if status == "in_progress" and verifier_volunteer_id:
+                assigned = str(data.get("assignedVolunteerId") or "").strip()
+                if assigned != verifier_volunteer_id.strip():
+                    raise ValueError(
+                        "Only the assigned volunteer can move this report to in progress"
+                    )
+            ref.update(patch)
+            return {"id": report_id, **data, **patch}
+        except ValueError:
+            raise
+        except Exception:
+            return apply_local(report_id, status)
+
+    def civic_report_after_update(self, report_id: str) -> Optional[Dict]:
+        """Re-read one report row in list shape."""
+        return next((r for r in self.list_civic_reports() if r["id"] == report_id), None)
+
     def _apply_report_assignment(
         self,
         report_id: str,

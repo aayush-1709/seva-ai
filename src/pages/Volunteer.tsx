@@ -10,11 +10,15 @@ import {
   Coffee,
   Truck,
   Stethoscope,
-  Info
+  Info,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+
+import { apiUrl } from '../lib/api';
 
 const volunteerRoles = [
   { id: 'delivery', name: 'Logistics & Delivery', icon: Truck, color: 'bg-blue-500', desc: 'Deliver food and medical supplies to those in need.' },
@@ -46,10 +50,70 @@ function BedIcon({ size, className }: { size: number, className?: string }) {
   );
 }
 
+type VolunteerResponse = {
+  id: string;
+};
+
 export default function Volunteer() {
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [distance, setDistance] = useState(5);
   const [isRegistered, setIsRegistered] = useState(false);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [lat, setLat] = useState('28.6139');
+  const [lng, setLng] = useState('77.2090');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [volunteerId, setVolunteerId] = useState('');
+
+  const registerVolunteer = async () => {
+    setError('');
+    if (!selectedRole) {
+      setError('Please choose a role first.');
+      return;
+    }
+    if (name.trim().length < 2 || phone.trim().length < 8) {
+      setError('Please enter a valid name and phone number.');
+      return;
+    }
+
+    const parsedLat = Number(lat);
+    const parsedLng = Number(lng);
+    if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
+      setError('Latitude and longitude must be valid numbers.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(apiUrl('/volunteer/register'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim(),
+          skills: [selectedRole],
+          location: { lat: parsedLat, lng: parsedLng },
+        }),
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(text || `Request failed with status ${response.status}`);
+      const data = (text ? JSON.parse(text) : {}) as VolunteerResponse;
+      const idStr = data.id ?? '';
+      setVolunteerId(idStr);
+      try {
+        if (idStr) localStorage.setItem('sevaai_volunteer_id', idStr);
+        localStorage.setItem('sevaai_volunteer_name', name.trim());
+      } catch {
+        /* private mode / blocked storage */
+      }
+      setIsRegistered(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to register volunteer.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (isRegistered) {
     return (
@@ -73,6 +137,7 @@ export default function Volunteer() {
             <p className="text-slate-600 font-medium">
               Your volunteer profile is being analyzed by SevaAI. We will notify you of high-priority tasks in your area within <span className="text-primary font-bold">1-2 hours</span>.
             </p>
+            <p className="text-xs font-mono text-slate-500">Volunteer ID: {volunteerId || 'pending'}</p>
           </div>
 
           <div className="grid grid-cols-3 gap-4 border-y border-slate-100 py-6">
@@ -170,6 +235,42 @@ export default function Volunteer() {
           {/* Availability & Skills */}
           <section className="grid md:grid-cols-2 gap-8">
             <div className="space-y-6">
+              <h3 className="text-2xl font-black text-slate-800 font-manrope">Your Details</h3>
+              <div className="grid grid-cols-1 gap-3">
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Full name"
+                  className="w-full rounded-2xl border border-slate-200 p-4 font-medium outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Phone number"
+                  className="w-full rounded-2xl border border-slate-200 p-4 font-medium outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    value={lat}
+                    onChange={(e) => setLat(e.target.value)}
+                    placeholder="Latitude"
+                    className="w-full rounded-2xl border border-slate-200 p-4 font-medium outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  <input
+                    type="text"
+                    value={lng}
+                    onChange={(e) => setLng(e.target.value)}
+                    placeholder="Longitude"
+                    className="w-full rounded-2xl border border-slate-200 p-4 font-medium outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
               <h3 className="text-2xl font-black text-slate-800 font-manrope flex items-center gap-3">
                 <Clock size={24} className="text-primary" />
                 Availability
@@ -254,19 +355,34 @@ export default function Volunteer() {
             </div>
 
             <div className="pt-6">
+              {error && (
+                <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-semibold flex items-start gap-2">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
               <button 
-                onClick={() => setIsRegistered(true)}
-                disabled={!selectedRole}
+                onClick={() => void registerVolunteer()}
+                disabled={!selectedRole || isSubmitting}
                 className="w-full py-5 bg-primary text-white rounded-[2.5rem] font-black text-xl uppercase tracking-tighter shadow-2xl shadow-primary/20 hover:translate-y-[-2px] transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group"
               >
-                Become a SevaHero
-                <motion.span 
-                  animate={{ scale: [1, 1.2, 1] }} 
-                  transition={{ repeat: Infinity, duration: 2 }}
-                  className="inline-block ml-3"
-                >
-                  <Heart size={20} fill="currentColor" />
-                </motion.span>
+                {isSubmitting ? (
+                  <span className="inline-flex items-center gap-3">
+                    Registering
+                    <Loader2 size={20} className="animate-spin" />
+                  </span>
+                ) : (
+                  <>
+                    Become a SevaHero
+                    <motion.span 
+                      animate={{ scale: [1, 1.2, 1] }} 
+                      transition={{ repeat: Infinity, duration: 2 }}
+                      className="inline-block ml-3"
+                    >
+                      <Heart size={20} fill="currentColor" />
+                    </motion.span>
+                  </>
+                )}
               </button>
               <p className="text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-4">
                 By clicking, you agree to our Code of Empathy

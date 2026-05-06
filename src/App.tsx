@@ -5,6 +5,7 @@
 
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import React, { useState, useEffect } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { 
   LayoutDashboard, 
   Map as MapIcon, 
@@ -31,7 +32,17 @@ import TaskBoard from './pages/TaskBoard';
 import NotFound from './pages/NotFound';
 import Settings from './pages/Settings';
 
-const SidebarLink = ({ to, icon: Icon, children, onClick }: { to: string, icon: any, children: React.ReactNode, onClick?: () => void }) => {
+const SidebarLink = ({
+  to,
+  icon: Icon,
+  children,
+  onClick,
+}: {
+  to: string;
+  icon: LucideIcon;
+  children: React.ReactNode;
+  onClick?: () => void;
+}) => {
   const location = useLocation();
   const isActive = location.pathname === to;
   
@@ -70,6 +81,9 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen flex">
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
       {/* Mobile Menu Backdrop */}
       <AnimatePresence>
         {isMobileMenuOpen && (
@@ -170,7 +184,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1">
+        <main id="main-content" className="flex-1" tabIndex={-1}>
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}

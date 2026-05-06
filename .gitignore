@@ -5,6 +5,7 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+run.txt
 
 # Environment — never commit secrets (template stays tracked)
 .env

@@ -17,6 +17,8 @@ def normalize_refine_category(raw: str) -> ReportCategoryId:
     key = raw.strip().lower().replace(" ", "_").replace("-", "_")
     synonyms: dict[str, ReportCategoryId] = {
         "infrastructure": "infrastructure",
+        "infra": "infrastructure",
+        "civil_works": "infrastructure",
         "roads": "infrastructure",
         "road": "infrastructure",
         "buildings": "infrastructure",

@@ -18,8 +18,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000';
+import { apiUrl } from '../lib/api';
 
 const categories = [
   { id: 'infrastructure', name: 'Infrastructure', icon: HardHat, color: 'bg-orange-500' },
@@ -76,7 +75,9 @@ export default function Report() {
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const dropped = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+    const dropped = Array.from(e.dataTransfer.files).filter(
+      (f): f is File => f instanceof File && f.type.startsWith('image/')
+    );
     setImages((prev) => [...prev, ...dropped].slice(0, MAX_IMAGES));
   }, []);
 
@@ -149,7 +150,7 @@ export default function Report() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/reports`, {
+      const res = await fetch(apiUrl('/reports'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -190,7 +191,7 @@ export default function Report() {
     }
     setIsRefining(true);
     try {
-      const res = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/reports/refine`, {
+      const res = await fetch(apiUrl('/reports/refine'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: text }),
@@ -202,7 +203,11 @@ export default function Report() {
         summary?: string;
       };
       if (!res.ok) {
-        const msg = parseApiDetail(data) || res.statusText || 'Refinement failed';
+        let msg = parseApiDetail(data) || res.statusText || 'Refinement failed';
+        if (res.status === 502) {
+          msg =
+            `${msg}\nGemini unavailable — check GEMINI_API_KEY in .env and restart the API.`.trim();
+        }
         throw new Error(msg);
       }
       const cat = data.category;

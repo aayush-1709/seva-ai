@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ElementType } from 'react';
 import {
   BarChart3,
   TrendingUp,
@@ -16,8 +16,7 @@ import {
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000';
+import { apiUrl } from '../lib/api';
 
 type CivicReport = {
   id: string;
@@ -311,7 +310,7 @@ const ImpactStat = ({
   label: string;
   value: string;
   sub: string;
-  icon: React.ElementType;
+  icon: ElementType;
   color: string;
 }) => (
   <motion.div
@@ -370,8 +369,7 @@ export default function Analytics() {
     setLoading(true);
     setFetchError(null);
     try {
-      const base = API_BASE_URL.replace(/\/$/, '');
-      const res = await fetch(`${base}/reports`);
+      const res = await fetch(apiUrl('/reports'));
       const text = await res.text();
       if (!res.ok) {
         throw new Error(text || `HTTP ${res.status}`);
@@ -441,12 +439,12 @@ export default function Analytics() {
       else if (p === 'high') high += 1;
       else other += 1;
     }
-    const rows = [
-      { name: 'High', key: 'high' as const, value: high },
-      { name: 'Medium', key: 'medium' as const, value: medium },
-      { name: 'Low', key: 'low' as const, value: low },
+    const rows: PrioritySlice[] = [
+      { name: 'High', key: 'high', value: high },
+      { name: 'Medium', key: 'medium', value: medium },
+      { name: 'Low', key: 'low', value: low },
     ];
-    if (other > 0) rows.push({ name: 'Other', key: 'other' as const, value: other });
+    if (other > 0) rows.push({ name: 'Other', key: 'other', value: other });
     return rows.filter((r) => r.value > 0);
   }, [reports]);
 

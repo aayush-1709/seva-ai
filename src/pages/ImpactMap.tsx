@@ -18,10 +18,7 @@ import {
   Building2,
 } from 'lucide-react';
 
-type ImportMetaEnvLike = {
-  VITE_API_BASE_URL?: string;
-  VITE_GOOGLE_MAPS_API_KEY?: string;
-};
+import { getApiBaseUrl } from '../lib/api';
 
 type LatLng = { lat: number; lng: number };
 
@@ -59,10 +56,11 @@ type ServiceHealth = {
   firebase_credentials_path_loaded: boolean;
 };
 
-const env = (import.meta as ImportMeta & { env?: ImportMetaEnvLike }).env ?? {};
-
-const API_BASE_URL = (env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000';
-const GOOGLE_MAPS_API_KEY = (env.VITE_GOOGLE_MAPS_API_KEY as string | undefined) ?? '';
+const API_BASE_URL = getApiBaseUrl();
+const GOOGLE_MAPS_API_KEY =
+  (typeof import.meta.env.VITE_GOOGLE_MAPS_API_KEY === 'string'
+    ? import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+    : '') || '';
 
 const MAP_LIBRARIES: ('visualization')[] = ['visualization'];
 
@@ -240,7 +238,7 @@ export default function ImpactMap() {
   const fetchReports = useCallback(async () => {
     setReportsLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/reports`);
+      const res = await fetch(`${API_BASE_URL}/reports`);
       if (!res.ok) {
         const t = await res.text();
         throw new Error(t || 'Failed to load reports');
@@ -259,7 +257,7 @@ export default function ImpactMap() {
 
   const fetchReportsQuiet = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/reports`);
+      const res = await fetch(`${API_BASE_URL}/reports`);
       if (!res.ok) return;
       const data = (await res.json()) as CivicReport[];
       setReports(Array.isArray(data) ? data : []);
@@ -304,15 +302,24 @@ export default function ImpactMap() {
       const [healthData, ngoData, nearbyData] = await Promise.all([
         fetch(`${API_BASE_URL}/health/services`).then((res) => parseResponse<ServiceHealth>(res)),
         fetch(`${API_BASE_URL}/ngos`).then((res) => parseResponse<NGO[]>(res)),
-        fetch(`${API_BASE_URL}/issues/nearby?lat=${parsedLat}&lng=${parsedLng}`).then((res) =>
-          parseResponse<{ issues: Issue[] }>(res)
+        fetch(`${API_BASE_URL}/reports/nearby?lat=${parsedLat}&lng=${parsedLng}`).then((res) =>
+          parseResponse<CivicReport[]>(res)
         ),
       ]);
 
       setServiceHealth(healthData);
       setNgos(ngoData);
-      setIssues(nearbyData.issues ?? []);
-      setSelectedIssueId(nearbyData.issues?.[0]?.id ?? '');
+      const mappedIssues: Issue[] = (nearbyData ?? []).map((report) => ({
+        id: report.id,
+        description: report.description,
+        location: report.location,
+        category: report.category,
+        urgency: report.priority,
+        summary: report.description,
+        suggested_ngo: 'Community partners',
+      }));
+      setIssues(mappedIssues);
+      setSelectedIssueId(mappedIssues[0]?.id ?? '');
       await fetchReports();
       setStatusText('Dashboard updated successfully.');
     } catch (error) {
@@ -356,7 +363,7 @@ export default function ImpactMap() {
       return;
     }
 
-    const base = API_BASE_URL.replace(/\/$/, '');
+    const base = API_BASE_URL;
     setLoading(true);
     setStatusText('Finding nearest volunteer…');
     try {

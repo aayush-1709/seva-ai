@@ -15,10 +15,9 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ElementType } from 'react';
 
-const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000';
+import { apiUrl, getApiBaseUrl } from '../lib/api';
 
 type CivicReport = {
   id: string;
@@ -57,7 +56,7 @@ const ActionCard = ({
 }: {
   title: string;
   description: string;
-  icon: React.ElementType;
+  icon: ElementType;
   color: string;
   to: string;
   delay: number;
@@ -94,7 +93,7 @@ const StatCard = ({
 }: {
   label: string;
   value: string;
-  icon: React.ElementType;
+  icon: ElementType;
   badge: string;
 }) => (
   <div className="bg-white/50 backdrop-blur-sm p-4 rounded-2xl border border-white/60 flex items-center gap-4">
@@ -146,7 +145,7 @@ export default function Dashboard() {
 
   const fetchReports = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/reports`);
+      const res = await fetch(apiUrl('/reports'));
       if (!res.ok) {
         const t = await res.text();
         throw new Error(t || `HTTP ${res.status}`);
@@ -288,7 +287,7 @@ export default function Dashboard() {
         >
           <AlertCircle className="shrink-0 mt-0.5" size={18} />
           <span>
-            Could not refresh reports: {fetchError}. Is the API running at {API_BASE_URL}?
+            Could not refresh reports: {fetchError}. Is the API running at {getApiBaseUrl()}?
           </span>
         </div>
       )}

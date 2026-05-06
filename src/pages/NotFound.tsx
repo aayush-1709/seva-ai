@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Home, Map, FileWarning, Search } from 'lucide-react';
+import { Home, Map, FileWarning, Search, HandHelping, ClipboardList } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export default function NotFound() {
@@ -17,24 +17,38 @@ export default function NotFound() {
             That path does not exist or was moved. Pick a destination below.
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <div className="flex flex-wrap gap-3 justify-center max-w-xl mx-auto">
           <Link
             to="/"
-            className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary text-white rounded-2xl font-bold hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95"
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-white rounded-2xl font-bold hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95 flex-1 min-w-[140px] sm:flex-none"
           >
             <Home size={18} />
             Dashboard
           </Link>
           <Link
             to="/report"
-            className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-secondary-container text-on-secondary-container rounded-2xl font-bold hover:shadow-lg transition-all active:scale-95"
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-secondary-container text-on-secondary-container rounded-2xl font-bold hover:shadow-lg transition-all active:scale-95 flex-1 min-w-[140px] sm:flex-none"
           >
             <FileWarning size={18} />
-            Report a problem
+            Report
+          </Link>
+          <Link
+            to="/request"
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 border-2 border-slate-200 text-slate-700 rounded-2xl font-bold hover:border-primary hover:text-primary transition-all active:scale-95 flex-1 min-w-[140px] sm:flex-none"
+          >
+            <HandHelping size={18} />
+            Quick help
+          </Link>
+          <Link
+            to="/tasks"
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 border-2 border-slate-200 text-slate-700 rounded-2xl font-bold hover:border-primary hover:text-primary transition-all active:scale-95 flex-1 min-w-[140px] sm:flex-none"
+          >
+            <ClipboardList size={18} />
+            Tasks
           </Link>
           <Link
             to="/map"
-            className="inline-flex items-center justify-center gap-2 px-6 py-3 border-2 border-slate-200 text-slate-700 rounded-2xl font-bold hover:border-primary hover:text-primary transition-all active:scale-95"
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 border-2 border-slate-200 text-slate-700 rounded-2xl font-bold hover:border-primary hover:text-primary transition-all active:scale-95 flex-1 min-w-[140px] sm:flex-none"
           >
             <Map size={18} />
             Map
